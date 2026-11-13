@@ -37,13 +37,13 @@ needs them. In Python, this means triple-quoted strings for embedded code (JS, S
 etc.) instead of escaping:
 
 ```python
-runtime.eval(f"""\
+page.eval(f"""\
   const html = "<div><p id='x'></p></div>"
 """)
 ```
 
 ## Writing JS eval strings
 
-DOM interaction is done by evaluating JavaScript inside the runtime via `runtime.eval()`.
-Name the Python variable holding a JS code string `js`, or with a `_js` suffix (e.g.
-`click_js`).
+DOM interaction is done by evaluating JavaScript inside the runtime. Name the variable,
+constant or function holding or building a JS code string `js`, or with a `_js` suffix (e.g.
+`click_js` in Python; `find_js()`, `PARENT_JS` in Rust).

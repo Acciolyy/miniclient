@@ -17,6 +17,9 @@ Embeds a V8 Runtime, DOM, and is designed to run [htmx](https://htmx.org) especi
 uv add miniclient
 ```
 
+Requires Python 3.15+. Wheels are built for Linux x86_64 and macOS arm64; see
+[Getting Started](https://marciomazza.github.io/miniclient/getting-started/) for other platforms.
+
 ## Example
 
 The snippet below opens a page, submits a search form, clicks a "load more" button and reads

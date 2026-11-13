@@ -10,6 +10,19 @@ icon: lucide/rocket
 uv add miniclient
 ```
 
+### Requirements
+
+miniclient needs Python 3.15 or later. Early 3.15 pre-releases install it but fail to import
+the extension (`undefined symbol`); upgrade to a 3.15 release. Prebuilt wheels are published
+for:
+
+- Linux x86_64 (glibc 2.28 or later)
+- macOS on Apple Silicon (arm64)
+
+The wheel already contains V8, jsdom and everything else it runs: no browser, Node.js or driver
+to install. On any other platform (Windows, Linux on ARM, macOS on Intel), installing falls back
+to building from source, which needs a Rust toolchain, Node.js and network access.
+
 ## Quick Tour
 
 The API simulates a browser's user interaction with the `Page` class:

@@ -16,7 +16,7 @@ site_name = "miniclient"
 # meaningful description of the site content for use by search engines.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_description
-site_description = "An HTMX powered python http client"
+site_description = "A minimal python http client that runs real JS/DOM, without a browser"
 
 # The site_author attribute. This is used in the HTML head element.
 #

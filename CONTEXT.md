@@ -22,9 +22,9 @@ stays alive and tears down silently even if its `Page` has already closed.
 _Avoid_: node, handle (a handle is the internal id an `Element` carries, not the object
 itself).
 
-**FormElement**:
-An `Element` that is specifically a `<form>`, adding `requestSubmit()`. Kept as its own
-type rather than folded into `Element`.
+**request_submit**:
+Submits a `<form>`. It lives on `Element` itself rather than a separate form type: called on
+anything but a `<form>`, it raises.
 
 **eval**:
 Runs arbitrary JavaScript in the page and returns its result, automatically awaiting a

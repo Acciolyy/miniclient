@@ -5,7 +5,8 @@ icon: lucide/book-open
 # Usage
 
 The `Page` class simulates a browser page for testing.
-It runs a real V8 engine (via `deno_core`) with jsdom providing the DOM,
+It runs a real V8 engine (via `deno_core`) with jsdom providing the DOM (backed by a native
+Rust node tree, selector engine and CSS engine),
 and lets you drive it from Python — load pages, query and interact with DOM elements, fill forms,
 click and trigger events.
 If the page includes htmx, it runs normally and htmx requests are awaited automatically.
@@ -107,7 +108,7 @@ with Page(browser) as page:
 ```
 
 For an ASGI app instead, pass an `httpx2.ASGITransport(app=app.asgi)` — see
-[httpx's documentation](https://www.python-httpx.org/advanced/transports/#asgi-transport).
+[httpx2's documentation](https://httpx2.pydantic.dev/advanced/transports/#asgi-transport).
 
 ## Loading external scripts via `mounts`
 
@@ -115,29 +116,41 @@ Serve local files through `mounts` so a `<script>` tag can load them without a r
 
 ```python
 page = Page(Browser(mounts={"http://localhost/ext/": tmp_path}))
-page.eval(
-    'document.head.innerHTML = \'<script src="http://localhost/ext/external-script.js"></script>\''
-)
+page.load('<script src="http://localhost/ext/external-script.js"></script>')
 ```
+
+As in a browser, a `<script>` inserted through `innerHTML` never runs: load it with `load()`,
+`goto()`, or by appending a `document.createElement("script")`.
 
 ## Loading pages
 
 Load content either via a real request, or directly as raw HTML:
 
 ```python
-# Fetch a URL, load the full document, and process htmx (real request via httpx_transport/network)
+# Fetch a URL and load the document (real request via httpx_transport/network)
 page.goto("http://localhost/page")
 
-# Load raw HTML directly into the document body, no request involved
+# Load raw HTML as the document, no request involved
 page.load("<p id='msg'>hello</p>")
 ```
 
-Each call to `load()` replaces the previous body entirely.
+Each call to `load()` replaces the whole document, `<head>` included, with the given HTML; a
+fragment like the one above is wrapped in `<html><body>`. Scripts in it run, so htmx on the
+page initializes itself as it would in a browser. Unlike `goto()`, `load()` keeps the same
+URL, JavaScript realm and history entry.
 
 A new page starts blank at `http://localhost/`. Its first `goto()` reuses that page's JavaScript
 realm instead of booting another, so anything `eval()` defined on `window` before it (globals,
-listeners) is still there afterwards; every later `goto()` starts a fresh realm. Cookies carry
-over either way.
+listeners) is still there afterwards; every later `goto()` starts a fresh realm. Cookies and
+history carry over either way. Elements found before a later `goto()` stop working: find them
+again on the new document.
+
+The current URL is available as `page.url` (on an `AsyncPage`, `await page.url()`):
+
+```python
+page.goto("http://localhost/page")
+assert page.url == "http://localhost/page"
+```
 
 Like Playwright's, `goto()` raises `JavaScriptError` when the request itself fails (connection
 refused, unknown host), and returns normally for any HTTP status. The page is then left on an
@@ -177,21 +190,29 @@ badges = row.find_all(".badge", text="new")
 el.html          # outerHTML — the element's tag plus its content
 el.inner_html    # innerHTML — the element's content, without its own tag
 el.text          # textContent — all text inside, with tags stripped
+el.tag_name      # tagName — upper case for HTML elements, e.g. "DIV"
 el.attr("href")  # value of the "href" attribute, or None if absent
 el.parent        # the parent Element, or None if there is no parent
 ```
 
 ## Filling inputs
 
-Set an input's value directly:
+Set an input's value with `fill()` or `type()`. They differ only in the event dispatched after
+setting the value:
 
 ```python
 input = page.find("#input-id")
-input.fill("new value")
+input.fill("new value")  # then dispatches a bubbling `change` event
+input.type("new value")  # then dispatches a bubbling `input` event
 ```
 
-This works for `<input>`, `<textarea>` and `<select>` elements.
-For `<select>`, this only takes effect if the value matches an existing `<option>`'s value,
+Pick the one your page listens for: `fill()` for `change` handlers (htmx's default trigger for
+inputs, textareas and selects), `type()` for `input` handlers such as `hx-trigger="input"`.
+Neither one dispatches key events; use `trigger("keyup")` (see below) for a handler like
+`hx-trigger="keyup changed delay:500ms"`.
+
+Both work for `<input>`, `<textarea>` and `<select>` elements, and wait for the page to settle.
+For `<select>`, the value only takes effect if it matches an existing `<option>`'s value,
 just like in a real browser.
 
 ## Clicking and triggering events
@@ -203,8 +224,20 @@ page.find("button").click()
 page.find("div").trigger("my-event")  # any DOM event, e.g. for hx-trigger="my-event"
 ```
 
-Both wait for the page to settle (any pending timers/fetches, e.g. from an htmx request, a
-plain `fetch()`, or another framework's async work).
+`trigger()` takes an optional `event_init` dict, passed to the event's constructor. It defaults
+to `{"bubbles": True, "cancelable": True}`; pass it to set other fields, such as `key` on a
+keyboard event:
+
+```python
+page.find("input").trigger("keyup", {"bubbles": True, "key": "Enter"})
+```
+
+The event class follows the event name: `MouseEvent` for `click`, `dblclick` and the `mouse*`
+events, `KeyboardEvent` for `keydown`/`keyup`/`keypress`, `FocusEvent` for `focus`/`blur`,
+`InputEvent` for `input`, `SubmitEvent` for `submit`, and a plain `Event` for anything else.
+
+Both `click()` and `trigger()` wait for the page to settle (any pending timers/fetches, e.g. from
+an htmx request, a plain `fetch()`, or another framework's async work).
 
 ## Submitting forms
 
@@ -230,18 +263,73 @@ With sync `Page`, use `eval()`:
 title = page.eval("document.title")
 ```
 
+The code runs as a top-level script: the result is the value of its last statement, and
+`var`/`function` declarations stay on `globalThis` for later calls.
+
 `Element` has its own `eval()`, with `this` bound to that element:
 
 ```python
-height = page.find("#panel").eval("this.scrollHeight")
+value = page.find("#panel").eval("this.dataset.state")
 ```
 
-On an `AsyncPage`, `eval()` (on the page and on elements) is a coroutine: `await` it. It also
-awaits the result when the JavaScript returns a promise:
+An element's `eval()` runs inside a strict-mode function instead, so its declarations stay
+local and assigning to an undeclared name throws.
+
+When the JavaScript returns a promise, `eval()` waits for it and returns its resolved value.
+Unlike `click()` and the other interactions, it does not wait for the page to settle, since a
+script may own a timer that never ends.
+
+On an `AsyncPage`, `eval()` (on the page and on elements) is a coroutine: `await` it:
 
 ```python
 async with AsyncPage(browser) as page:
     title = await page.eval("document.title")
     status = await page.eval("fetch('/api/status').then(r => r.json())")
     data = await page.find("#panel").eval("this.loadData()")  # returns a promise
+```
+
+### Return values
+
+The result crosses into Python as JSON: strings, numbers, booleans, plain objects (as `dict`)
+and arrays (as `list`). Both `undefined` and `null` become `None`. Anything JSON would
+silently change raises `RuntimeError` instead of arriving as a wrong value: a function, a
+Symbol, a BigInt, `NaN` or `Infinity`, an `undefined` inside an object or array, and any object
+that is not a plain object or array (a `Map`, a typed array, a DOM node...). A `Date` arrives as
+its ISO string.
+
+To read a DOM node back, return the parts you need (`el.textContent`, `el.id`), or use
+`find()`.
+
+## Errors
+
+A JavaScript exception surfaces in Python as `JavaScriptError`, carrying the JS error's
+`name`, `message` and `stack`:
+
+```python
+from miniclient._miniclient import JavaScriptError
+
+try:
+    page.eval("null.foo")
+except JavaScriptError as error:
+    print(error.name)     # "TypeError"
+    print(error.message)  # "Cannot read properties of null (reading 'foo')"
+```
+
+It is raised by `eval()` when the script throws or its promise rejects, and by `goto()` when the
+request fails (see _Loading pages_). An exception thrown by an event listener during `click()`,
+`fill()` or `trigger()` is not raised: as in a browser, it is reported and the dispatch goes on.
+
+Calling a method on a closed page, or on an element found before a later `goto()`, raises
+`RuntimeError`.
+
+## Configuration
+
+V8 starts with flags tuned for short-lived pages:
+`--no-opt --no-regexp-tier-up --min-semi-space-size=16 --initial-old-space-size=128`.
+Set the `MINICLIENT_V8_FLAGS` environment variable, before the first page is created, to replace
+them. An empty value runs stock V8, which can be faster for a page with a long hot loop or
+heavy regular expressions:
+
+```bash
+MINICLIENT_V8_FLAGS="" pytest
 ```

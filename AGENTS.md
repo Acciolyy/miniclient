@@ -58,19 +58,20 @@ app too. Prefer spec-correct behavior over the minimum needed to turn mini's own
 
 ## Runtime stack
 
-- A JavaScript runtime provide by deno_core. It is NOT Node.js and NOT QuickJS.
+- A JavaScript runtime provided by deno_core. It is NOT Node.js and NOT QuickJS.
 - **jsdom** runs INSIDE that runtime, loaded with custom module polyfills for Node modules (`node:buffer`, `node:stream`, `node:crypto`, etc.).
-- **htmx** runs inside the same context, initialized after jsdom's `Window` is set up. It uses the polyfilled `fetch` and timers. `fetch` is done via `httpx`
-- The Python `Page` class in `python/miniclient/browser.py` wraps a `Page` pyo3 class (imported there as `RuntimePage` to avoid colliding with the facade's own name) — one window/document/frame, no tabs, mirroring what Playwright's own `Browser.newPage()` returns.
+- **htmx** runs inside the same context, initialized after jsdom's `Window` is set up. It uses the polyfilled `fetch` and timers. `fetch` is done via `httpx2`
+- The DOM node tree, HTML parsing and selector matching are native Rust (`src/dom*.rs`), behind ops jsdom calls into; CSS runs on stylo (`src/css.rs`, `src/cssom.rs`).
+- `python/miniclient/browser.py`: `AsyncPage` subclasses the pyo3 `Page` (imported there as `NativePage` to avoid colliding with the facade's own name), and the synchronous `Page` wraps an `AsyncPage` on its own event loop — one window/document/frame, no tabs, mirroring what Playwright's own `Browser.newPage()` returns.
 
 More details about htmx:
 @vendor/htmx/src/skills/htmx-guidance.md
 
 ## DOM interaction
 
-All DOM interaction (click, submit, dispatchEvent, query selectors, etc.) is done by evaluating JavaScript inside the runtime via `runtime.eval()` / `runtime.eval_async()`. There is no direct Python API to jsdom or htmx objects — they live inside the V8 isolate.
+All DOM interaction (click, submit, dispatchEvent, query selectors, etc.) is done by evaluating JavaScript inside the runtime. There is no direct Python API to jsdom or htmx objects — they live inside the V8 isolate.
 
-When adding DOM interaction methods, implement them in Python using `runtime.eval()` / `runtime.eval_async()` to execute JS against the jsdom `document` already initialized in `bootstrap.js`.
+The ergonomic methods live in the pyo3-agnostic async core `src/browser.rs` (`browser::Page`/`browser::Element`): each builds a JS string against the `document` and the `__mini` helpers `bootstrap.js` sets up, and sends it to the isolate with a `Wait` mode (`None` for reads, `Promise` for `eval`, `Settle` for interactions). `src/lib.rs` only wraps them for Python (see ADR 0001). Add new DOM interaction methods there, not in Python.
 
 For naming and quoting conventions in these JS eval strings, see
 [docs/coding-standards.md](docs/coding-standards.md).
