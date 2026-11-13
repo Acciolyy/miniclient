@@ -148,13 +148,14 @@ impl Page {
             .map(|found| found.into_iter().map(Element).collect())
     }
 
-    /// Navigate to `url` in a fresh isolate, fetching and loading the document.
+    /// Navigate to `url`, fetching and loading the document: in a fresh isolate, except for a
+    /// page's first navigation, which reuses its blank one.
     async fn goto(&self, url: String) -> PyResult<()> {
         let outcome = self.0.goto(&url).await;
         Python::attach(|py| outcome.map_err(|e| to_pyerr(py, e)))
     }
 
-    /// Load `html` into the document and initialize htmx, same-document.
+    /// Replace the whole document with `html`, same-document.
     async fn load(&self, html: String) -> PyResult<()> {
         let outcome = self.0.load(&html).await;
         Python::attach(|py| outcome.map_err(|e| to_pyerr(py, e)))

@@ -307,8 +307,8 @@ impl Page {
         Ok(())
     }
 
-    /// Load `html` into the document and initialize htmx, same-document (no navigation, no
-    /// history change).
+    /// Replace the whole document with `html`, same-document (no navigation, no history
+    /// change).
     pub async fn load(&self, html: &str) -> Result<(), EvalError> {
         self.pristine.store(false, Ordering::Relaxed);
         let handle = self.runtime().handle();

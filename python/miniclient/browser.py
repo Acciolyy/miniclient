@@ -222,11 +222,11 @@ class Page:
         return [Element(native, self._loop) for native in self._async.find_all(selector, text)]
 
     def goto(self, url: str) -> None:
-        """Fetch url, load the full document, and process htmx."""
+        """Fetch url and load the document, waiting for the page to settle."""
         self._loop.run_until_complete(self._async.goto(url))
 
     def load(self, html: str) -> None:
-        """Load HTML into the document and initialize htmx."""
+        """Replace the whole document with html, same URL, and wait for the page to settle."""
         self._loop.run_until_complete(self._async.load(html))
 
     def close(self) -> None:
